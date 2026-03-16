@@ -1,0 +1,43 @@
+.env
+*.env
+.env.local
+
+# Dependențe
+node_modules/
+__pycache__/
+*.pyc
+.expo/
+dist/
+build/
+
+# Sistem
+.DS_Store
+Thumbs.db
+
+# Fișiere temporare Excel
+~$*.xlsx
+~$*.xls
+
+# Mediu virtual Python
+venv/
+
+# Fișiere generate / temporare
+repro_out.txt
+export/*.pdf
+
+# Date locale (poze persoane reale, seturi de test, intrări)
+data/
+fisiere_date_intrare/
+
+# Fișiere de intrare după tip, oriunde în proiect (date personale reale)
+# Poze/text de intrare stau în data/ și fisiere_date_intrare/ (deja ignorate mai sus);
+# NU ignorăm global *.jpg/*.png/*.txt ca să nu rupem asset-uri frontend / requirements.txt
+*.ged
+*.xlsx
+*.xls
+# Excepție: șablonul Excel oferit de aplicație la descărcare (necesar la deploy)
+!frontend/public/sablon_arbore_genealogic.xlsx
+
+# Extra ne-esențiale pentru predare
+simulare_bfs.m
+backend/preview_emails.html
