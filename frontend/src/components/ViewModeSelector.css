@@ -1,0 +1,77 @@
+.viewmode-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: #faf9fc;
+  border-bottom: 1px solid #e8e3f0;
+  flex-wrap: wrap;
+}
+
+.viewmode-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.viewmode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid #d8d0e8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #5a4f6e;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.viewmode-btn:hover:not(:disabled) {
+  border-color: #7c6b9e;
+  background: #f3eefa;
+}
+
+.viewmode-btn-active {
+  background: #7c6b9e;
+  border-color: #7c6b9e;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.viewmode-btn-active:hover {
+  background: #6b5b8a;
+}
+
+.viewmode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.viewmode-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.viewmode-label {
+  line-height: 1;
+}
+
+.viewmode-focus-info {
+  font-size: 13px;
+  color: #7c6b9e;
+  padding: 4px 10px;
+  background: #f3eefa;
+  border-radius: 6px;
+}
+
+@media (max-width: 768px) {
+  .viewmode-label {
+    display: none;
+  }
+  .viewmode-btn {
+    padding: 8px 10px;
+  }
+}
