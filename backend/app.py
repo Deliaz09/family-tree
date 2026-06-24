@@ -61,6 +61,20 @@ def slug_photo_url(u: str) -> str:
         return slug_nume_fisier(u)
     return u[:idx + 1] + slug_nume_fisier(u[idx + 1:])
 
+def slugifica_pentru_url(text: str) -> str:
+    """Text -> slug sigur pentru URL: ascii, litere mici, cratime. Max 40 caractere."""
+    if not text:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", text)
+    fara_semne = "".join(c for c in nfkd if not unicodedata.combining(c))
+    rezultat = []
+    for c in fara_semne.lower():
+        rezultat.append(c if (("a" <= c <= "z") or ("0" <= c <= "9")) else "-")
+    slug = "".join(rezultat)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")[:40]
+
 def frontend_url(request: Request | None = None) -> str:
     configured = (APP_PUBLIC_URL or FRONTEND_URL or "").strip().rstrip("/")
     if configured:
@@ -2366,11 +2380,30 @@ def info_link_public(request: Request, cu: dict = Depends(utilizator_curent)):
         return {"token": None, "url": None}
     return {"token": r["t"], "url": f"{frontend_url(request)}/view/{r['t']}"}
 
+class ShareGenerateRequest(BaseModel):
+    slug: str | None = None
+
 @app.post("/api/share/generate")
-def genereaza_link_public(request: Request, cu: dict = Depends(utilizator_curent)):
+def genereaza_link_public(request: Request,
+                          req: ShareGenerateRequest | None = None,
+                          cu: dict = Depends(utilizator_curent)):
     cere_owner(cu)
     uid = cu["user_id"]
-    token = secrets.token_urlsafe(16)
+    dorit = (req.slug if req else None) or ""
+    if dorit.strip():
+        token = slugifica_pentru_url(dorit)
+        if len(token) < 3:
+            raise HTTPException(400, "Numele linkului trebuie să aibă cel puțin 3 caractere "
+                                     "(litere, cifre sau cratime).")
+        with driver.session() as s:
+            ocupat = s.run(
+                "MATCH (sl:ShareLink {token:$token}) WHERE sl.user_id <> $uid RETURN sl LIMIT 1",
+                token=token, uid=uid,
+            ).single()
+        if ocupat:
+            raise HTTPException(409, f"Numele „{token}” este deja folosit de alt arbore. Alege altul.")
+    else:
+        token = secrets.token_urlsafe(8)  # ~11 caractere: scurt, dar imposibil de ghicit (64 biti)
     with driver.session() as s:
         s.run("MERGE (sl:ShareLink {user_id:$uid}) SET sl.token = $token", uid=uid, token=token)
         audit_log(s, cu, "create_public_link", "share_link", uid)

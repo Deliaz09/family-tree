@@ -2516,6 +2516,44 @@ body {
   font-family: monospace;
 }
 
+.share-url-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #c8b8e8;
+  cursor: text;
+  white-space: nowrap;
+  overflow-x: auto;
+  text-overflow: ellipsis;
+}
+.share-url-input:focus {
+  outline: none;
+  border-color: #7c6b9e;
+  box-shadow: 0 0 0 2px rgba(124, 107, 158, 0.25);
+}
+
+.sidebar-share-generate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.share-slug-input {
+  font-family: monospace;
+  font-size: 12px;
+}
+.share-slug-hint {
+  font-size: 10.5px;
+  color: #7a6e8a;
+  margin: 0;
+  line-height: 1.4;
+}
+.share-slug-hint code {
+  background: #efe9f7;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
 .share-buttons {
   display: flex;
   gap: 6px;

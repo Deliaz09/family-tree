@@ -7,13 +7,22 @@ const ETICHETA_ROL = {
   viewer: 'Vizualizare',
 };
 
-function LinkBox({ icon, titlu, descriere, url, onGenereaza, onRevoca, genText }) {
+function LinkBox({ icon, titlu, descriere, url, onGenereaza, onRevoca, genText, withSlug }) {
   const [copiat, setCopiat] = useState(false);
   const [genereaza, setGenereaza] = useState(false);
+  const [slug, setSlug] = useState('');
+  const [genErr, setGenErr] = useState(null);
 
   async function handleGen() {
     setGenereaza(true);
-    try { await onGenereaza(); } finally { setGenereaza(false); }
+    setGenErr(null);
+    try {
+      await onGenereaza(slug.trim() || undefined);
+    } catch (e) {
+      setGenErr(e?.response?.data?.detail || 'Eroare la generarea linkului.');
+    } finally {
+      setGenereaza(false);
+    }
   }
   function copiaza() {
     if (!url) return;
@@ -25,25 +34,52 @@ function LinkBox({ icon, titlu, descriere, url, onGenereaza, onRevoca, genText }
 
   if (!url) {
     return (
-      <button
-        className="sidebar-action-btn sidebar-action-share"
-        onClick={handleGen}
-        disabled={genereaza}
-        title={descriere}
-      >
-        <span className="action-icon">{icon}</span>
-        <span>{genereaza ? 'Se generează...' : genText}</span>
-      </button>
+      <div className="sidebar-share-generate">
+        {withSlug && (
+          <input
+            className="collab-input share-slug-input"
+            type="text"
+            placeholder="nume-personalizat (opțional)"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            disabled={genereaza}
+            maxLength={40}
+          />
+        )}
+        <button
+          className="sidebar-action-btn sidebar-action-share"
+          onClick={handleGen}
+          disabled={genereaza}
+          title={descriere}
+        >
+          <span className="action-icon">{icon}</span>
+          <span>{genereaza ? 'Se generează...' : genText}</span>
+        </button>
+        {withSlug && (
+          <p className="share-slug-hint">
+            Lasă gol pentru un cod aleator. Cu nume: <code>…/view/numele-tău</code>
+          </p>
+        )}
+        {genErr && <p className="collab-msg collab-msg-err">{genErr}</p>}
+      </div>
     );
   }
 
   return (
     <div className="sidebar-share-box">
       <div className="share-label">{icon} {titlu}</div>
-      <div className="share-url">{url.slice(0, 38)}...</div>
+      <input
+        className="share-url share-url-input"
+        type="text"
+        value={url}
+        readOnly
+        onFocus={(e) => e.target.select()}
+        onClick={(e) => e.target.select()}
+        title={url}
+      />
       <div className="share-buttons">
         <button className="share-copy-btn" onClick={copiaza}>
-          {copiat ? '✅ Copiat!' : '📋 Copiază'}
+          {copiat ? '✅ Copiat link complet!' : '📋 Copiază link complet'}
         </button>
         <button className="share-revoke-btn" onClick={onRevoca} title="Dezactivează linkul">
           ✕
@@ -83,8 +119,8 @@ export default function CollaborationPanel() {
 
   useEffect(() => { incarca(); }, [incarca]);
 
-  async function genView() {
-    const res = await axios.post(`${API_BASE}/api/share/generate`);
+  async function genView(slug) {
+    const res = await axios.post(`${API_BASE}/api/share/generate`, slug ? { slug } : {});
     setLinkView(`${window.location.origin}/view/${res.data.token}`);
   }
   async function revocaView() {
@@ -159,6 +195,7 @@ export default function CollaborationPanel() {
         onGenereaza={genView}
         onRevoca={revocaView}
         genText="Link vizualizare"
+        withSlug
       />
 
       <LinkBox
