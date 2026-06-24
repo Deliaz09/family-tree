@@ -2,7 +2,9 @@ import io
 import json
 import os
 import sys
+import time
 import uuid
+import base64
 import unicodedata
 import shutil
 import secrets
@@ -96,6 +98,34 @@ if not NEO4J_URI or not NEO4J_PASS:
     print("Credentialele Neo4j lipsesc din .env")
     sys.exit(1)
 
+# --- Validare token cu cache + client httpx partajat ---------------------------
+# Validarea remote la Supabase (/auth/v1/user) e un dus-intors in retea. Fara cache,
+# fiecare cerere API o repeta -> o incarcare de pagina (3-5 cereri cu ACELASI token)
+# facea 3-5 round-trips. Cache-uim rezultatul pe token pana aproape de expirarea lui,
+# si refolosim un singur client httpx (keep-alive) ca sa nu refacem handshake-ul TLS.
+_AUTH_CACHE: dict = {}                  # token -> (info_user, expira_la_epoch)
+_AUTH_CACHE_LOCK = threading.Lock()
+_AUTH_CACHE_TTL = 300                   # secunde (5 min); plafonat la expirarea tokenului
+_AUTH_CACHE_MAX = 2000
+
+_httpx_client = None
+def _client_httpx():
+    global _httpx_client
+    if _httpx_client is None:
+        import httpx
+        _httpx_client = httpx.Client(timeout=10)
+    return _httpx_client
+
+def _exp_din_jwt(token: str):
+    """Citeste 'exp' din payload-ul JWT FARA a verifica semnatura (doar pt. expirarea cache-ului)."""
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload_b64))
+        return float(data["exp"]) if data.get("exp") else None
+    except Exception:
+        return None
+
 def doar_autentificat(authorization: str = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         print(f"[AUTH DEBUG] lipseste antetul Authorization (valoare={authorization!r})")
@@ -106,23 +136,27 @@ def doar_autentificat(authorization: str = Header(None)) -> dict:
     if not SUPABASE_URL or not SUPABASE_ANON:
         raise HTTPException(500, "Configurarea Supabase lipseste pe server")
 
+    acum = time.time()
+    with _AUTH_CACHE_LOCK:
+        intrare = _AUTH_CACHE.get(token)
+        if intrare and intrare[1] > acum:
+            return intrare[0]
+
     try:
-        import httpx
-        with httpx.Client(timeout=10) as client:
-            res = client.get(
-                f"{SUPABASE_URL}/auth/v1/user",
-                headers={
-                    "apikey":        SUPABASE_ANON,
-                    "Authorization": f"Bearer {token}",
-                }
-            )
+        res = _client_httpx().get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey":        SUPABASE_ANON,
+                "Authorization": f"Bearer {token}",
+            }
+        )
         if res.status_code != 200:
             print(f"[AUTH DEBUG] Supabase a respins tokenul: status={res.status_code} "
                   f"len_token={len(token)} body={res.text[:200]!r}")
             raise HTTPException(401, "Token invalid sau expirat")
         u = res.json()
         meta = u.get("user_metadata") or {}
-        return {
+        info = {
             "user_id":   u["id"],
             "email":     u.get("email", ""),
             "full_name": meta.get("full_name") or u.get("email", ""),
@@ -132,6 +166,17 @@ def doar_autentificat(authorization: str = Header(None)) -> dict:
     except Exception as e:
         print(f"[AUTH ERROR] {e}")
         raise HTTPException(401, "Eroare validare token")
+
+    expira = acum + _AUTH_CACHE_TTL
+    exp_token = _exp_din_jwt(token)
+    if exp_token:
+        expira = min(expira, exp_token)
+    if expira > acum:
+        with _AUTH_CACHE_LOCK:
+            if len(_AUTH_CACHE) > _AUTH_CACHE_MAX:
+                _AUTH_CACHE.clear()
+            _AUTH_CACHE[token] = (info, expira)
+    return info
 
 def _supabase_admin_headers() -> dict:
     return {

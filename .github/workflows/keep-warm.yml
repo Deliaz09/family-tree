@@ -1,0 +1,26 @@
+name: Keep backend warm
+
+# Render free tier adoarme backend-ul dupa ~15 min de inactivitate, iar prima
+# accesare dupa aceea are un cold-start de 30-60s. Acest workflow face un ping
+# periodic pe /health (care atinge si Neo4j), ca serverul sa ramana mereu treaz.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # la fiecare 10 minute
+  workflow_dispatch: {}        # permite pornirea manuala din tab-ul Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health (trezeste Render + Neo4j)
+        run: |
+          URL="https://family-tree-api-sp1s.onrender.com/health"
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "Incercare $i -> HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "Backend-ul nu a raspuns 200 dupa 3 incercari."
+          exit 1
