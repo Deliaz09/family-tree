@@ -21,7 +21,7 @@ export default function PublicViewPage() {
     let activ = true;
 
     axios.create()
-      .get(`${API_BASE}/api/share/view/${token}`)
+      .get(`${API_BASE}/api/share/view/${token}`, { params: { _: Date.now() } })
       .then(res => {
         if (!activ) return;
         setNodes(res.data.nodes || []);

@@ -18,7 +18,7 @@ from typing import List
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Query, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Header, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
@@ -688,14 +688,48 @@ async def create_indexes():
         s.run("CREATE INDEX change_status  IF NOT EXISTS FOR (c:ChangeRequest) ON (c.status)")
     print("Indecsi Neo4j verificati/creati")
 
+def _adancime_maxima_generatii(copii_pe_parinte: dict) -> int:
+    """Cel mai lung lanț părinte→copil (număr de treceri între generații).
+
+    Modelul Neo4j leagă persoanele prin noduri :Relation (MAN/WOMAN→părinte,
+    CHILD→copil), nu direct prin :BIRTH_PARENT — de aceea vechiul query cu
+    (p)-[:BIRTH_PARENT*]->(desc) nu se potrivea niciodată și întorcea mereu 0.
+    """
+    memo: dict = {}
+    in_curs: set = set()
+
+    def adancime(nod):
+        if nod in memo:
+            return memo[nod]
+        if nod in in_curs:            # protecție la cicluri
+            return 0
+        in_curs.add(nod)
+        best = 0
+        for copil in copii_pe_parinte.get(nod, ()):
+            best = max(best, 1 + adancime(copil))
+        in_curs.discard(nod)
+        memo[nod] = best
+        return best
+
+    return max((adancime(n) for n in copii_pe_parinte), default=0)
+
+
 @app.get("/api/stats")
 def statistici(cu: dict = Depends(utilizator_curent)):
     uid = cu["user_id"]
     with driver.session() as s:
         nr_p = s.run("MATCH (p:Person   {user_id:$uid}) RETURN count(p) AS n", uid=uid).single()["n"]
         nr_r = s.run("MATCH (r:Relation {user_id:$uid}) RETURN count(r) AS n", uid=uid).single()["n"]
-        rez = s.run('\n            MATCH (p:Person {user_id:$uid})\n            OPTIONAL MATCH path = (p)-[:BIRTH_PARENT|ADOPTIVE_PARENT*]->(desc:Person {user_id:$uid})\n            RETURN max(length(path)) AS max_gen\n        ', uid=uid).single()
-        gen = rez["max_gen"] or 0
+        perechi = s.run(
+            "MATCH (rel:Relation {user_id:$uid})-[:CHILD]->(c:Person {user_id:$uid}) "
+            "MATCH (rel)-[:MAN|WOMAN]->(p:Person {user_id:$uid}) "
+            "RETURN p.id AS parinte, c.id AS copil",
+            uid=uid,
+        )
+        copii_pe_parinte: dict = {}
+        for rec in perechi:
+            copii_pe_parinte.setdefault(rec["parinte"], []).append(rec["copil"])
+    gen = _adancime_maxima_generatii(copii_pe_parinte)
     return {"total_persons": nr_p, "total_relations": nr_r, "max_generation": gen}
 
 @app.get("/api/data-quality")
@@ -2464,7 +2498,12 @@ def revocare_link_public(cu: dict = Depends(utilizator_curent)):
     return {"message": "Link public dezactivat"}
 
 @app.get("/api/share/view/{token}")
-def vizualizeaza_arbore_public(token: str):
+def vizualizeaza_arbore_public(token: str, response: Response):
+    # Viewer-ul e LIVE (întoarce arborele curent al owner-ului). Fără aceste
+    # anteturi, browserul/CDN-ul pot servi un instantaneu vechi (ex. arborele gol
+    # de după o ștergere), așa că adăugările ulterioare „nu se mai actualizează".
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
     with driver.session() as s:
         r = s.run("MATCH (sl:ShareLink {token:$t}) RETURN sl.user_id AS uid", t=token).single()
         if not r:

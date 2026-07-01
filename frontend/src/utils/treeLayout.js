@@ -2996,6 +2996,20 @@ function computeBowtieLayout(nodes, edges, focusId, compact, activeSpouseId) {
       ...l,
       source: { ...l.source, x: s.x, y: s.y },
       target: { ...l.target, x: t.x, y: t.y },
+      // pathD/segments vin în coordonatele conului; le retranslatăm în spaţiul
+      // papionului (txCenter + dy), ca traseele de căsătorie să atingă cardurile.
+      pathD: l.pathD
+        ? l.pathD.replace(/(-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)/g, (_, px, py) =>
+            `${txCenter(Number(px))} ${Number(py) + dy}`)
+        : l.pathD,
+      segments: (l.segments || []).map(sg => ({
+        ...sg,
+        x1: txCenter(sg.x1), y1: sg.y1 + dy,
+        x2: txCenter(sg.x2), y2: sg.y2 + dy,
+      })),
+      badgePoint: l.badgePoint
+        ? { x: txCenter(l.badgePoint.x), y: l.badgePoint.y + dy }
+        : l.badgePoint,
     };
   });
   const brackets = (cone.brackets || []).map(b => ({

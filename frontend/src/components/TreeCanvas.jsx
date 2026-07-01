@@ -28,6 +28,41 @@ const snapEdge = (v, grid = 5) => Math.round(v / grid) * grid;
 
 const FOCUS_NAV_MODES = new Set(['all', 'ancestors', 'descendants', 'hourglass', 'dualtree']);
 
+// Alege un focus implicit reprezentativ: nodul cu cele mai multe legături din CEA
+// MAI MARE componentă conexă. Fără asta, focusul cădea pe nodes[0] (arbitrar), iar
+// viewMode='all' arată doar componenta focusului — dacă nodes[0] pica pe un ostrov
+// de 2 persoane (frecvent după re-import, când arborele are componente disjuncte),
+// se vedeau doar 2 din toate persoanele.
+function pickCentralNodeId(nodes, edges) {
+  if (!nodes || !nodes.length) return null;
+  if (!edges || !edges.length) return nodes[0]?.id;
+  const ids = nodes.map(n => String(n.id));
+  const adj = new Map(ids.map(i => [i, []]));
+  edges.forEach(e => {
+    const s = String(e.source), t = String(e.target);
+    if (adj.has(s) && adj.has(t)) { adj.get(s).push(t); adj.get(t).push(s); }
+  });
+  const seen = new Set();
+  let bestComp = [];
+  for (const start of ids) {
+    if (seen.has(start)) continue;
+    const comp = [], stack = [start];
+    while (stack.length) {
+      const x = stack.pop();
+      if (seen.has(x)) continue;
+      seen.add(x); comp.push(x);
+      for (const y of adj.get(x)) if (!seen.has(y)) stack.push(y);
+    }
+    if (comp.length > bestComp.length) bestComp = comp;
+  }
+  let best = bestComp[0], bestDeg = -1;
+  for (const id of bestComp) {
+    const dgr = adj.get(id).length;
+    if (dgr > bestDeg) { bestDeg = dgr; best = id; }
+  }
+  return best;
+}
+
 function resolvePhotoUrl(photo_url, photo) {
   if (photo_url) {
     if (photo_url.startsWith('http') || photo_url.startsWith('data:')) return photo_url;
@@ -136,10 +171,10 @@ export default function TreeCanvas({
       }
       setFocusId(externalFocusId);
     } else if (!focusId && nodes && nodes.length > 0) {
-      const initial = selectedId || nodes[0]?.id;
+      const initial = selectedId || pickCentralNodeId(nodes, edges) || nodes[0]?.id;
       if (initial) setFocusId(String(initial));
     }
-  }, [externalFocusId, nodes, selectedId]);
+  }, [externalFocusId, nodes, edges, selectedId]);
 
   useEffect(() => {
     setManuallyExpanded(prev => (prev.size ? new Set() : prev));
@@ -365,7 +400,7 @@ export default function TreeCanvas({
     return <div className="tree-loading" />;
   }
 
-  const { positionedNodes, links, brackets, diamondMarkers, offsetX, offsetY, autoCollapsed } = layout;
+  const { positionedNodes, links, brackets, bowtieLinks, diamondMarkers, offsetX, offsetY, autoCollapsed } = layout;
   const layoutMetrics = (() => {
     const totalPersons = nodes?.length || 0;
     const renderedIds = new Set(
@@ -609,6 +644,26 @@ export default function TreeCanvas({
               />
             );
           })}
+
+          {bowtieLinks && bowtieLinks.length > 0 && (
+            <g transform={`translate(${offsetX} ${offsetY})`}>
+              {bowtieLinks.map((bl, i) => {
+                if (!bl.d) return null;
+                const marriage = bl.kind === 'altmarriage';
+                return (
+                  <path
+                    key={`bowtie-${i}`}
+                    className={`bowtie-link ${marriage ? 'bowtie-partner' : 'bowtie-anc'}`}
+                    d={bl.d} fill="none"
+                    stroke={marriage ? '#7c6b9e' : '#b08968'}
+                    strokeWidth={marriage ? 2 : 1.6}
+                    strokeDasharray={marriage ? '6,4' : 'none'}
+                    strokeLinecap="round" strokeLinejoin="round"
+                  />
+                );
+              })}
+            </g>
+          )}
 
           {positionedNodes.map(n => {
             const x = n.x + offsetX, y = n.y + offsetY;
